@@ -6833,7 +6833,11 @@ usage:
         wi_close(wi[i]);
 
 #ifdef HAVE_SQLITE
-    if (G.record_data && G.output_format_sqlite) dump_write_sqlite();
+    if (G.record_data && G.output_format_sqlite)
+	{
+	    dump_write_sqlite();
+	    sqlite3_close(G.f_sqlite);
+	}
 #endif
 
     if (G.record_data) {
