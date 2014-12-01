@@ -877,7 +877,8 @@ int dump_initialize( char *prefix, int ivs_only )
 		sql = "CREATE TABLE log("			\
 		    "MAC            CHAR(17)  NOT NULL,"	\
 		    "TIME           DATETIME  NOT NULL,"	\
-		    "SIGNAL         INT       NOT NULL);";
+		    "SIGNAL         INT       NOT NULL,"        \
+		    "PRIMARY KEY (MAC,TIME));";
 		res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
 		if ( res != SQLITE_OK ) {
 		    fprintf( stderr, "SQL error: %s\n", errmsg);
@@ -3572,7 +3573,7 @@ int dump_write_sqlite( void )
 	    
 	    ltime = localtime( &st_cur->tlast );
 	    
-	    sprintf( sql, "INSERT INTO log (MAC, TIME, SIGNAL) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %3d);",
+	    sprintf( sql, "INSERT OR IGNORE INTO log (MAC, TIME, SIGNAL) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %3d);",
 		     st_cur->stmac[0], st_cur->stmac[1],
 		     st_cur->stmac[2], st_cur->stmac[3],
 		     st_cur->stmac[4], st_cur->stmac[5], 
@@ -5652,7 +5653,6 @@ int main( int argc, char *argv[] )
         {"gpsd",     0, 0, 'g'},
         {"ivs",      0, 0, 'i'},
         {"write",    1, 0, 'w'},
-	//	{"sqlite",   0, 0, 'S'},
         {"encrypt",  1, 0, 't'},
         {"update",   1, 0, 'u'},
         {"berlin",   1, 0, 'B'},
