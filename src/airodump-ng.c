@@ -64,6 +64,11 @@
 #include <pcre.h>
 #endif
 
+#ifdef HAVE_SQLITE
+#include <sqlite3.h>
+#include "include/mysqlite.h"
+#endif
+
 #include "version.h"
 #include "pcap.h"
 #include "uniqueiv.h"
@@ -639,8 +644,11 @@ char usage[] =
 "      --uptime              : Display AP Uptime from Beacon Timestamp\n"
 "      --output-format\n"
 "                  <formats> : Output format. Possible values:\n"
-"                              pcap, ivs, csv, gps, kismet, netxml\n"
-"      --ignore-negative-one : Removes the message that says\n"
+"                              pcap, ivs, csv, gps, kismet, netxml"
+#ifdef HAVE_SQLITE
+", sqlite"
+#endif
+"\n      --ignore-negative-one : Removes the message that says\n"
 "                              fixed channel <interface>: -1\n"
 "\n"
 "  Filter options:\n"
@@ -793,11 +801,10 @@ void update_rx_quality( )
 
 int dump_initialize( char *prefix, int ivs_only )
 {
-    int i, ofn_len;
+    int res, i, ofn_len;
     FILE *f;
     char * ofn = NULL;
-
-
+    char *sql, *errmsg;
     /* If you only want to see what happening, send all data to /dev/null */
 
     if ( prefix == NULL || strlen( prefix ) == 0) {
@@ -850,6 +857,34 @@ int dump_initialize( char *prefix, int ivs_only )
 			free( ofn );
 			return( 1 );
 		}
+	}
+
+	/* create the output sqlite database */
+	
+	if (G.output_format_sqlite) {
+	    memset(ofn, 0, ofn_len);
+	    snprintf( ofn,  ofn_len, "%s-%02d.%s",
+		      prefix, G.f_index, AIRODUMP_NG_SQLITE_EXT );
+	    
+	    res = sqlite3_open(ofn, &G.f_sqlite);
+	    if ( res != SQLITE_OK ) {
+		perror( "sqlite3_open failed" );
+		fprintf( stderr, "Could not open \"%s\". Error (%d)\n", ofn, res );
+		free( ofn );
+		return( 1 );
+	    } else {
+		
+		sql = "CREATE TABLE log("			\
+		    "MAC            CHAR(17)  NOT NULL,"	\
+		    "TIME           DATETIME  NOT NULL,"	\
+		    "SIGNAL         INT       NOT NULL);";
+		res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
+		if ( res != SQLITE_OK ) {
+		    fprintf( stderr, "SQL error: %s\n", errmsg);
+		    sqlite3_free(errmsg);
+		    return( 1 );
+		}		
+	    }
 	}
 
     /* create the output Kismet CSV file */
@@ -3509,6 +3544,67 @@ void dump_print( int ws_row, int ws_col, int if_num )
     }
 }
 
+int dump_write_sqlite( void )
+{
+
+    struct AP_info *ap_cur;
+    struct ST_info *st_cur;
+    struct tm * ltime;
+    char *sql, *errmsg;
+    int res;
+    
+    st_cur = G.st_1st;
+    
+   
+    sqlite3_exec(G.f_sqlite, "BEGIN TRANSACTION", NULL, NULL, &errmsg);
+    sql = (char *)malloc(1024);
+    
+    while(st_cur != NULL)
+	{
+	    
+	    ap_cur = st_cur->base;
+	    
+	    if( ap_cur->nb_pkt < 2 )
+		{
+		    st_cur = st_cur->next;
+		    continue;
+		}
+	    
+	    ltime = localtime( &st_cur->tlast );
+	    
+	    sprintf( sql, "INSERT INTO log (MAC, TIME, SIGNAL) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %3d);",
+		     st_cur->stmac[0], st_cur->stmac[1],
+		     st_cur->stmac[2], st_cur->stmac[3],
+		     st_cur->stmac[4], st_cur->stmac[5], 
+		     
+		     1900 + ltime->tm_year, 1 + ltime->tm_mon,
+		     ltime->tm_mday, ltime->tm_hour,
+		     ltime->tm_min,  ltime->tm_sec,
+		     
+		     st_cur->power);
+	    
+	    res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
+	    if ( res != SQLITE_OK ) {
+		fprintf( stderr, "SQL error: %s\n", errmsg );
+		sqlite3_free(errmsg);
+	    }
+	        
+	    
+	    st_cur = st_cur->next;
+	}
+    
+    free(sql);
+    
+    res = sqlite3_exec(G.f_sqlite, "END TRANSACTION", NULL, NULL, &errmsg);
+    if ( res != SQLITE_OK )
+	{
+	    fprintf( stderr, "SQL error: %s\n", errmsg );
+	    sqlite3_free(errmsg);
+	}
+    
+    return 0;
+}
+
 int dump_write_csv( void )
 {
     int i, j, n;
@@ -3714,7 +3810,7 @@ int dump_write_csv( void )
 
         st_cur = st_cur->next;
     }
-
+    
     fprintf( G.f_txt, "\r\n" );
     fflush( G.f_txt );
     return 0;
@@ -5556,6 +5652,7 @@ int main( int argc, char *argv[] )
         {"gpsd",     0, 0, 'g'},
         {"ivs",      0, 0, 'i'},
         {"write",    1, 0, 'w'},
+	//	{"sqlite",   0, 0, 'S'},
         {"encrypt",  1, 0, 't'},
         {"update",   1, 0, 'u'},
         {"berlin",   1, 0, 'B'},
@@ -5650,6 +5747,11 @@ int main( int argc, char *argv[] )
     G.output_format_csv = 1;
     G.output_format_kismet_csv = 1;
     G.output_format_kismet_netxml = 1;
+
+#ifdef HAVE_SQLITE
+    G.output_format_sqlite = 0;
+    //G.record_sqlite = 0;
+#endif
 
 #ifdef HAVE_PCRE
     G.f_essid_regex = NULL;
@@ -6002,8 +6104,18 @@ int main( int argc, char *argv[] )
                 G.f_essid = (char**)realloc(G.f_essid, G.f_essid_count * sizeof(char*));
                 G.f_essid[G.f_essid_count-1] = optarg;
                 break;
+		
+		/*            case 'S':
+#ifdef HAVE_SQLITE
+                G.output_format_sqlite = 1;
+		G.record_sqlite = 1;
+#else
+                printf("Error: Airodump-ng wasn't compiled with sqlite support; aborting\n");
+		exit(1);
+#endif
+break;*/
 
-	    case 'R':
+            case 'R':
 
 #ifdef HAVE_PCRE
                 if (G.f_essid_regex != NULL)
@@ -6048,7 +6160,9 @@ int main( int argc, char *argv[] )
 					if (strlen(output_format_string) != 0) {
 						if (strncasecmp(output_format_string, "csv", 3) == 0
 							|| strncasecmp(output_format_string, "txt", 3) == 0) {
-							G.output_format_csv = 1;
+						    G.output_format_csv = 1;
+						} else if (strncasecmp(output_format_string, "sqlite", 6) == 0) {
+						    G.output_format_sqlite = 1;
 						} else if (strncasecmp(output_format_string, "pcap", 4) == 0
 							|| strncasecmp(output_format_string, "cap", 3) == 0) {
                             if (ivs_only) {
@@ -6075,17 +6189,16 @@ int main( int argc, char *argv[] )
 							|| strncasecmp(output_format_string, "kismet-newcore", 14) == 0
 							|| strncasecmp(output_format_string, "kismet_newcore", 14) == 0) {
 							G.output_format_kismet_netxml = 1;
-						} else if (strncasecmp(output_format_string, "default", 6) == 0) {
+						} else if (strncasecmp(output_format_string, "default", 7) == 0) {
 							G.output_format_pcap = 1;
 							G.output_format_csv = 1;
 							G.output_format_kismet_csv = 1;
 							G.output_format_kismet_netxml = 1;
-						} else if (strncasecmp(output_format_string, "none", 6) == 0) {
+						} else if (strncasecmp(output_format_string, "none", 4) == 0) {
 							G.output_format_pcap = 0;
 							G.output_format_csv = 0;
 							G.output_format_kismet_csv = 0;
-    						G.output_format_kismet_netxml = 0;
-
+							G.output_format_kismet_netxml = 0;
 							G.usegpsd  = 0;
 							ivs_only = 0;
 						} else {
@@ -6394,9 +6507,13 @@ usage:
             /* update the csv stats file */
 
             tt1 = time( NULL );
-            if (G. output_format_csv)  dump_write_csv();
+            if (G.output_format_csv)  dump_write_csv();
             if (G.output_format_kismet_csv) dump_write_kismet_csv();
             if (G.output_format_kismet_netxml) dump_write_kismet_netxml();
+
+	    /* record to sqlite */
+	    if (G.output_format_sqlite)  dump_write_sqlite();
+
 
             /* sort the APs by power */
 
@@ -6715,8 +6832,12 @@ usage:
     for(i=0; i<G.num_cards; i++)
         wi_close(wi[i]);
 
+#ifdef HAVE_SQLITE
+    if (G.record_data && G.output_format_sqlite) dump_write_sqlite();
+#endif
+
     if (G.record_data) {
-        if ( G. output_format_csv)  dump_write_csv();
+        if ( G.output_format_csv)  dump_write_csv();
         if ( G.output_format_kismet_csv) dump_write_kismet_csv();
         if ( G.output_format_kismet_netxml) dump_write_kismet_netxml();
 

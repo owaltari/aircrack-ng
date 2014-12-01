@@ -127,11 +127,12 @@ char *get_manufacturer(unsigned char mac0, unsigned char mac1, unsigned char mac
 #define KISMET_NETXML_EXT "kismet.netxml"
 #define AIRODUMP_NG_GPS_EXT "gps"
 #define AIRODUMP_NG_CAP_EXT "cap"
+#define AIRODUMP_NG_SQLITE_EXT "sqlite"
 
-#define NB_EXTENSIONS 6
+#define NB_EXTENSIONS 7
 
 const unsigned char llcnull[4] = {0, 0, 0, 0};
-char *f_ext[NB_EXTENSIONS] = { AIRODUMP_NG_CSV_EXT, AIRODUMP_NG_GPS_EXT, AIRODUMP_NG_CAP_EXT, IVS2_EXTENSION, KISMET_CSV_EXT, KISMET_NETXML_EXT };
+char *f_ext[NB_EXTENSIONS] = { AIRODUMP_NG_CSV_EXT, AIRODUMP_NG_GPS_EXT, AIRODUMP_NG_CAP_EXT, IVS2_EXTENSION, KISMET_CSV_EXT, KISMET_NETXML_EXT, AIRODUMP_NG_SQLITE_EXT };
 
 extern const unsigned long int crc_tbl[256];
 extern const unsigned char crc_chop_tbl[256][4];
@@ -329,6 +330,10 @@ struct globals
 
     int f_index;            /* outfiles index       */
     FILE *f_txt;            /* output csv file      */
+#ifdef HAVE_SQLITE
+    sqlite3 *f_sqlite;      /* sqlite output db     */
+    //int record_sqlite;
+#endif
     FILE *f_kis;            /* output kismet csv file      */
     FILE *f_kis_xml;        /* output kismet netxml file */
     FILE *f_gps;            /* output gps file      */
@@ -426,6 +431,7 @@ struct globals
 
     int output_format_pcap;
     int output_format_csv;
+    int output_format_sqlite;
     int output_format_kismet_csv;
     int output_format_kismet_netxml;
     pthread_t input_tid;

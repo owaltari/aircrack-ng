@@ -31,7 +31,8 @@ COMMON_CFLAGS	=
 
 
 ifeq ($(subst TRUE,true,$(filter TRUE true,$(sqlite) $(SQLITE))),true)
-	COMMON_CFLAGS	+= -DHAVE_SQLITE
+	COMMON_CFLAGS += -DHAVE_SQLITE
+	LIBS += -lsqlite3
 endif
 
 ifeq ($(pcre), true)
