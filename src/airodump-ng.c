@@ -877,8 +877,13 @@ int dump_initialize( char *prefix, int ivs_only )
 		sql = "CREATE TABLE log("			\
 		    "MAC            CHAR(17)  NOT NULL,"	\
 		    "TIME           DATETIME  NOT NULL,"	\
+		    "CH             INT       NOT NULL,"        \
 		    "SIGNAL         INT       NOT NULL,"        \
-		    "PRIMARY KEY (MAC,TIME));";
+		    "PRIMARY KEY (MAC,TIME));"                  \
+		    "CREATE TABLE probe("                       \
+		    "MAC            CHAR(17)  NOT NULL,"        \
+		    "SSID           CHAR(32)  NOT NULL,"        \
+		    "PRIMARY KEY (MAC,SSID));";
 		res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
 		if ( res != SQLITE_OK ) {
 		    fprintf( stderr, "SQL error: %s\n", errmsg);
@@ -3551,8 +3556,9 @@ int dump_write_sqlite( void )
     struct AP_info *ap_cur;
     struct ST_info *st_cur;
     struct tm * ltime;
+    char ssid[32];
     char *sql, *errmsg;
-    int res;
+    int res, ch, i, j;
     
     st_cur = G.st_1st;
     
@@ -3573,23 +3579,58 @@ int dump_write_sqlite( void )
 	    
 	    ltime = localtime( &st_cur->tlast );
 	    
-	    sprintf( sql, "INSERT OR IGNORE INTO log (MAC, TIME, SIGNAL) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %3d);",
+	    if( ! memcmp( ap_cur->bssid, BROADCAST, 6 ) )
+		ch = 0;
+	    else
+		ch = ap_cur->channel;
+	    
+	    
+	    sprintf( sql, "INSERT OR IGNORE INTO log (MAC, TIME, CH, SIGNAL) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %d, %3d);",
 		     st_cur->stmac[0], st_cur->stmac[1],
 		     st_cur->stmac[2], st_cur->stmac[3],
-		     st_cur->stmac[4], st_cur->stmac[5], 
+		     st_cur->stmac[4], st_cur->stmac[5],
 		     
 		     1900 + ltime->tm_year, 1 + ltime->tm_mon,
 		     ltime->tm_mday, ltime->tm_hour,
 		     ltime->tm_min,  ltime->tm_sec,
-		     
-		     st_cur->power);
+
+		     ch, st_cur->power);
 	    
 	    res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
 	    if ( res != SQLITE_OK ) {
 		fprintf( stderr, "SQL error: %s\n", errmsg );
 		sqlite3_free(errmsg);
 	    }
-	        
+	    
+	    
+
+	    memset( ssid, 0, sizeof( ssid ) );
+	    
+	    for( i = 0; i < NB_PRB; i++ )
+		{
+		    // Iterate the SSID ring buffer
+		    if( st_cur->probes[i][0] == '\0' )
+			continue;
+		    
+		    for(j=0; j<st_cur->ssid_length[i]; j++)
+			{
+			    snprintf( ssid + j, sizeof( ssid ) - 1 - j,
+				      "%c", st_cur->probes[i][j]);
+			}
+		    
+		    // SQL interaction
+		    sprintf( sql, "INSERT OR IGNORE INTO probe (MAC, SSID) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%s');",
+			     st_cur->stmac[0], st_cur->stmac[1],
+			     st_cur->stmac[2], st_cur->stmac[3],
+			     st_cur->stmac[4], st_cur->stmac[5],
+			     ssid);
+		    		    	    
+		    res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
+		    if ( res != SQLITE_OK ) {
+			fprintf( stderr, "SQL error: %s\n", errmsg );
+			sqlite3_free(errmsg);
+		    }
+		}
 	    
 	    st_cur = st_cur->next;
 	}
@@ -3691,7 +3732,7 @@ int dump_write_csv( void )
         }
 
         fprintf( G.f_txt, ",");
-
+	
         if( (ap_cur->security & (AUTH_OPN|AUTH_PSK|AUTH_MGT)) == 0 ) fprintf( G.f_txt, "   ");
         else
         {
