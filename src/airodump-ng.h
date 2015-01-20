@@ -43,7 +43,7 @@
 #define NB_PWR  5       /* size of signal power ring buffer */
 #define NB_PRB 10       /* size of probed ESSID ring buffer */
 
-#define MAX_CARDS 8	/* maximum number of cards to capture from */
+#define MAX_CARDS 14	/* maximum number of cards to capture from */
 
 #define	STD_OPN		0x0001
 #define	STD_WEP		0x0002

@@ -671,6 +671,8 @@ char usage[] =
 "                    0       : FIFO (default)\n"
 "                    1       : Round Robin\n"
 "                    2       : Hop on last\n"
+"                    3       : Static (Works only if\n"
+"                              monitored channels <= interfaces)\n"
 "      -s                    : same as --cswitch\n"
 "\n"
 "      --help                : Displays this usage screen\n"
@@ -4973,6 +4975,12 @@ void channel_hopper(struct wif *wi[], int if_num, int chan_count )
             chi=chi-(if_num - 1);
         }
 
+	// No channel hopping
+	if(G.chswitch == 3)
+	{
+	    continue;
+	}
+
         if(first)
         {
             first = 0;
@@ -6068,7 +6076,7 @@ int main( int argc, char *argv[] )
 
             case 's':
 
-                if (atoi(optarg) > 2) {
+                if (atoi(optarg) > 3) {
                     goto usage;
                 }
                 if (G.chswitch != 0) {
