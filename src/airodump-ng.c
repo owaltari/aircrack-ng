@@ -881,6 +881,10 @@ int dump_initialize( char *prefix, int ivs_only )
 		    "TIME           DATETIME  NOT NULL,"	\
 		    "CH             INT       NOT NULL,"        \
 		    "SIGNAL         INT       NOT NULL,"        \
+		    "NB_PKT         INT       NOT NULL,"        \
+		    "NB_FPRB        INT       NOT NULL,"        \
+		    "NB_FASSOC      INT       NOT NULL,"        \
+		    "NB_FDATA       INT       NOT NULL,"        \
 		    "PRIMARY KEY (MAC,TIME));"                  \
 		    "CREATE TABLE probe("                       \
 		    "MAC            CHAR(17)  NOT NULL,"        \
@@ -1238,34 +1242,34 @@ int dump_add_packet( unsigned char *h80211, int caplen, struct rx_info *ri, int 
     unsigned char clear[2048];
     int weight[16];
     int num_xor=0;
-
+    
     struct AP_info *ap_cur = NULL;
     struct ST_info *st_cur = NULL;
     struct NA_info *na_cur = NULL;
     struct AP_info *ap_prv = NULL;
     struct ST_info *st_prv = NULL;
     struct NA_info *na_prv = NULL;
-
+    
     /* skip all non probe response frames in active scanning simulation mode */
     if( G.active_scan_sim > 0 && h80211[0] != 0x50 )
         return(0);
-
+    
     /* skip packets smaller than a 802.11 header */
-
+    
     if( caplen < 24 )
         goto write_packet;
-
+    
     /* skip (uninteresting) control frames */
-
+    
     if( ( h80211[0] & 0x0C ) == 0x04 )
         goto write_packet;
-
+    
     /* if it's a LLC null packet, just forget it (may change in the future) */
-
+    
     if ( caplen > 28)
         if ( memcmp(h80211 + 24, llcnull, 4) == 0)
             return ( 0 );
-
+    
     /* grab the sequence number */
     seq = ((h80211[22]>>4)+(h80211[23]<<4));
 
@@ -1606,7 +1610,8 @@ skip_station:
 
     if( h80211[0] == 0x40 && st_cur != NULL )
     {
-        p = h80211 + 24;
+	st_cur->nb_fprb++;
+	p = h80211 + 24;
 
         while( p < h80211 + caplen )
         {
@@ -1653,6 +1658,7 @@ skip_probe:
 
     if( h80211[0] == 0x80 || h80211[0] == 0x50 )
     {
+	
         if( !(ap_cur->security & (STD_OPN|STD_WEP|STD_WPA|STD_WPA2)) )
         {
             if( ( h80211[34] & 0x10 ) >> 4 ) ap_cur->security |= STD_WEP|ENC_WEP;
@@ -1958,7 +1964,10 @@ skip_probe:
             p += 2 + p[1];
         }
         if(st_cur != NULL)
-            st_cur->wpa.state = 0;
+	{
+	    st_cur->wpa.state = 0;
+	    st_cur->nb_fassoc++;
+	}
     }
 
     /* packet parsing: some data */
@@ -1966,7 +1975,6 @@ skip_probe:
     if( ( h80211[0] & 0x0C ) == 0x08 )
     {
         /* update the channel if we didn't get any beacon */
-
         if( ap_cur->channel == -1 )
         {
             if(ri->ri_channel > 0 && ri->ri_channel < 167)
@@ -3126,7 +3134,7 @@ void dump_print( int ws_row, int ws_col, int if_num )
     	strcat(strbuf, "       UPTIME  ");
 
     strcat(strbuf, "ESSID");
-
+    
 	if ( G.show_manufacturer && ( ws_col > (columns_ap - 4) ) ) {
 		// write spaces (32).
 		memset(strbuf+columns_ap, 32, G.maxsize_essid_seen - 5 ); // 5 is the len of "ESSID"
@@ -3587,7 +3595,7 @@ int dump_write_sqlite( void )
 		ch = ap_cur->channel;
 	    
 	    
-	    sprintf( sql, "INSERT OR IGNORE INTO log (MAC, TIME, CH, SIGNAL) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %d, %3d);",
+	    sprintf( sql, "INSERT OR IGNORE INTO log (MAC, TIME, CH, SIGNAL, NB_PKT, NB_FPRB, NB_FASSOC, NB_FDATA) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%04d-%02d-%02d %02d:%02d:%02d', %d, %3d, %lu, %lu, %lu, %lu);",
 		     st_cur->stmac[0], st_cur->stmac[1],
 		     st_cur->stmac[2], st_cur->stmac[3],
 		     st_cur->stmac[4], st_cur->stmac[5],
@@ -3596,7 +3604,9 @@ int dump_write_sqlite( void )
 		     ltime->tm_mday, ltime->tm_hour,
 		     ltime->tm_min,  ltime->tm_sec,
 
-		     ch, st_cur->power);
+		     ch, st_cur->power,
+		     st_cur->nb_pkt, st_cur->nb_fprb, st_cur->nb_fassoc, st_cur->nb_fdata
+		     );
 	    
 	    res = sqlite3_exec(G.f_sqlite, sql, NULL, 0, &errmsg);
 	    if ( res != SQLITE_OK ) {

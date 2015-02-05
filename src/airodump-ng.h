@@ -271,6 +271,10 @@ struct ST_info
     struct AP_info *base;    /* AP this client belongs to */
     time_t tinit, tlast;     /* first and last time seen  */
     unsigned long nb_pkt;    /* total number of packets   */
+    unsigned long nb_fprb;   /*  - probes                 */
+    unsigned long nb_fassoc; /*  - association request    */
+    unsigned long nb_fdata;  /*  - data frames            */
+    
     unsigned char stmac[6];  /* the client's MAC address  */
     char *manuf;             /* the client's manufacturer */
     int probe_index;         /* probed ESSIDs ring index  */
