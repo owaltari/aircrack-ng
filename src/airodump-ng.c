@@ -6570,10 +6570,6 @@ usage:
             if (G.output_format_kismet_csv) dump_write_kismet_csv();
             if (G.output_format_kismet_netxml) dump_write_kismet_netxml();
 
-	    /* record to sqlite */
-	    if (G.output_format_sqlite)  dump_write_sqlite();
-
-
             /* sort the APs by power */
 
 	    if(G.sort_by != SORT_BY_NOTHING) {
@@ -6582,6 +6578,14 @@ usage:
 		pthread_mutex_unlock( &(G.mx_sort) );
 	    }
         }
+
+        if( time( NULL ) - tt3 >= 1 )
+        {
+	    /* record to sqlite */
+            tt3 = time( NULL );
+	    if (G.output_format_sqlite)  dump_write_sqlite();
+	    
+	}
 
         if( time( NULL ) - tt2 > 3 )
         {
