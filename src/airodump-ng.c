@@ -3566,9 +3566,9 @@ int dump_write_sqlite( void )
     struct AP_info *ap_cur;
     struct ST_info *st_cur;
     struct tm * ltime;
-    char ssid[32];
+    char ssid[64];
     char *sql, *errmsg;
-    int res, ch, i, j;
+    int res, ch, i, j, k;
     
     st_cur = G.st_1st;
     
@@ -3624,12 +3624,16 @@ int dump_write_sqlite( void )
 		    if( st_cur->probes[i][0] == '\0' )
 			continue;
 		    
-		    for(j=0; j<st_cur->ssid_length[i]; j++)
-			{
-			    snprintf( ssid + j, sizeof( ssid ) - 1 - j,
+		    for(j=0, k=0; j<st_cur->ssid_length[i]; j++, k++)
+			if (st_cur->probes[i][j] == '\'') {
+			    snprintf( ssid + k, sizeof( ssid ) - 2 - j,
+				      "\'%c", st_cur->probes[i][j]); // In SQlite a single quote escapes another one
+			    k++;
+			} else {
+			    snprintf( ssid + k, sizeof( ssid ) - 1 - j,
 				      "%c", st_cur->probes[i][j]);
 			}
-		    
+
 		    // SQL interaction
 		    sprintf( sql, "INSERT OR IGNORE INTO probe (MAC, SSID) VALUES ('%02X:%02X:%02X:%02X:%02X:%02X', '%s');",
 			     st_cur->stmac[0], st_cur->stmac[1],
